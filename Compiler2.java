@@ -116,6 +116,7 @@ public class Compiler2 {
         int start = -1;
         int end = -1;
         String[] tempIO = null;
+        //save the name of the module and the names of all of its ports
         for(int i = 0; i < code.size();i++){
             if(!code.get(i).isEmpty() && code.get(i).length() > 5){
                 if(code.get(i).substring(0,6).equals("module")){
@@ -167,6 +168,7 @@ public class Compiler2 {
     code line by line and interpreting what each one means
     */
     public void compile(){
+        //create preset vcc, gnd, and float wires and ports
         modules.get(0).wires.add(new Wire("gnd",1));
         modules.get(0).wires.get(modules.get(0).wires.size()-1).ports.add(new Port("GND",(byte)1));
         GND = modules.get(0).wires.get(modules.get(0).wires.size()-1);
@@ -180,8 +182,6 @@ public class Compiler2 {
             currModule = modules.get(j);
             for(int i=currModule.start; i<currModule.end; i++){
                 //make sure the line is not empty and is not a comment
-                if(i==28)
-                    System.out.println();
                 if(!code.get(i).isEmpty() && code.get(i).trim().length() > 2){
                     //add all the inputs
                     if(code.get(i).substring(0,2).equals("//")){}
@@ -356,15 +356,23 @@ public class Compiler2 {
                 }
             }
         }
+        //replace the module placeholders in the main module with the parts contained
+        //the modules
         currModule = modules.get(0);
         insertMod(currModule);
+        //make sure the first port of the gnd and vcc wires are actually ground and vcc
         if(!GND.ports.get(0).name.equals("GND"))
             GND.ports.add(0,new Port("GND",(byte)1));
         if(!VCC.ports.get(0).name.equals("VCC")){
             VCC.ports.add(0,new Port("VCC",(byte)1));
         }
+        //convert all of the more complicated parts such as muxes and comparators to gates
         part2gate();
+        //get rid of any IO ports that there are doubles of and convert any redundant
+        //ports to a single port or wire
         redundantIOPorts();
+        //remove the ports of the float wire between ports and create a new wire 
+        //for the part that represents a floating wire. Necessary for the EDIF file
         for(int i=1;i<currModule.wires.get(2).ports.size();i++){
             boolean entered=false;
             for(Part part : currModule.parts){
@@ -381,7 +389,10 @@ public class Compiler2 {
             temp.ports.add(new Port(currModule.wires.get(2).ports.get(i)));
             currModule.wires.get(2).ports.remove(i);
         }
+        //get rid of the float wire so it isn't added to the EDIF file
         modules.get(0).wires.remove(2);
+        //create a vcc and ground part for the EDIF file. Connect these parts
+        //to the vcc and ground wires and the parts connected to them
         VCC VccPart = new VCC("VCC$1");
         Ground GndPart = new Ground("GND$1");
         currModule.parts.add(0,VccPart);
@@ -404,7 +415,7 @@ public class Compiler2 {
                 currModule.parts.remove(0);
             }
         }
-//        addBuffers();
+        //write the final EDIF file
         edif = new EWriter(modules.get(0));
         edif.write();
     }
@@ -511,6 +522,7 @@ public class Compiler2 {
     */
     public void preMod(String[] myPorts, int myMod){
         String type="";
+        //find the names of the wires attached to the preset module
         Wire[] myWires = new Wire[myPorts.length];
         for(int i=0;i<myPorts.length;i++){
             if(!(myPorts[i].equals("")||myPorts[i].equals(" "))){
@@ -520,6 +532,7 @@ public class Compiler2 {
                 }
             }
         }
+        //find the wires attached to the preset module
         for(int i = 0; i < myPorts.length; i++){
             for(Wire wire : currModule.wires){
                 if(wire.name.equals(myPorts[i])){
@@ -533,11 +546,13 @@ public class Compiler2 {
                 }
             }
         }
+        //if one of the preset modules was not assigned to a wire, set it to float
         for(int i=0;i<myPorts.length;i++){
             if(myWires[i]==null){
                 myWires[i]=FLOAT;
             }
         }
+        //attach the wires if the module is an AND gate
         if(myMod==0){
             if(myWires.length==3)
                 assign(myWires[0].name+" = "+myWires[1].name+ " & "+myWires[2].name+";");
@@ -559,6 +574,7 @@ public class Compiler2 {
                 myWires[4].ports.add(myAND4.ports.get(3));
             }
         }
+        //attach the wires if the module is an OR gate
         else if(myMod==1){
             if(myWires.length==3)
                 assign(myWires[0].name+" = "+myWires[1].name+ " | "+myWires[2].name+";");
@@ -580,9 +596,11 @@ public class Compiler2 {
                 myWires[4].ports.add(myOR4.ports.get(3));
             }
         }
+        //attach the wires if the module is an XOR gate
         else if(myMod==2){
             assign(myWires[0].name+" = "+myWires[1].name+" ^ "+myWires[2].name+";");
         }
+        //attach the wires if the module is a NAND gate
         else if(myMod==3){
             if(myWires.length==3)
                 assign(myWires[0].name+" = "+myWires[1].name+ " ~& "+myWires[2].name+";");
@@ -604,6 +622,7 @@ public class Compiler2 {
                 myWires[4].ports.add(myNAND4.ports.get(3));
             }
         }
+        //attach the wires if the module is a NOR gate
         else if(myMod==4){
             if(myWires.length==3)
                 assign(myWires[0].name+" = "+myWires[1].name+ " ~| "+myWires[2].name+";");
@@ -625,21 +644,25 @@ public class Compiler2 {
                 myWires[4].ports.add(myNOR4.ports.get(3));
             }
         }
+        //attach the wires if the module is an XNOR gate
         else if(myMod==5){
             assign(myWires[0].name+" = "+myWires[1].name+" ~^ "+myWires[2].name+";");
         }
+        //attach the wires if the module is a buffer
         else if(myMod==6){
             Buffer newBuff = new Buffer(newName("BUFF$"));
             myWires[myWires.length-2].ports.add(newBuff.ports.get(1));
             myWires[myWires.length-1].ports.add(newBuff.ports.get(0));
             currModule.parts.add(newBuff);
         }
+        //attach the wires if the module is an Inverter gate
         else if(myMod==7){
             Inverter newInv = new Inverter(newName("INV$"));
             myWires[myWires.length-2].ports.add(newInv.ports.get(1));
             myWires[myWires.length-1].ports.add(newInv.ports.get(0));
             currModule.parts.add(newInv);
         }
+        //attach the wires if the module is a Tri-State Buffer
         else if(myMod==8){
             TSB newTSB = new TSB(newName("TSB$"));
             myWires[myWires.length-3].ports.add(newTSB.ports.get(1));
@@ -647,17 +670,7 @@ public class Compiler2 {
             myWires[myWires.length-1].ports.add(newTSB.ports.get(2));
             currModule.parts.add(newTSB);
         }
-//        else if(myMod==8){
-//            Buffer newBuff = new Buffer("Buff"+numBuffs);
-//            numBuffs++;
-//            AND newAnd = new AND("AND"+numANDs);
-//            numANDs++;
-//            currModule.parts.add(newBuff);
-//            currModule.parts.add(newAnd);
-//        }
-//        else if(myMod==9){
-//            
-//        }
+        //attach the wires if the module is a D-Flip-Flop
         else if(myMod==12){
             DFF newDff = new DFF(newName("DFF$"));
             for(int i=0;i<myWires.length;i++)
@@ -706,9 +719,7 @@ public class Compiler2 {
                 System.out.println();
             }
             if(module.parts.get(i).name.contains("MOD_")){
-                if(module.parts.get(i).name.contains("MOD_full_array")){
-                    System.out.println();
-                }
+                //create a copy of the module
                 Module tempMod = null;
                 for(int j=0;j<modules.size();j++){
                     if(modules.get(j).name.equals(module.parts.get(i).name.substring(4))){
@@ -723,11 +734,13 @@ public class Compiler2 {
                         }
                     }
                 }
+                //if the module contains any other modules, recursively implement them
                 for(int j=0;j<tempMod.parts.size();j++){
                     if(tempMod.parts.get(j).name.contains("MOD_")){
                         insertMod(tempMod);
                     }
                 }
+                //find the wires within the module that connect to this module
                 ArrayList<Wire[]> myWires = new ArrayList<Wire[]>();
                 for(int j=0;j<module.parts.get(i).ports.size();j++){
                     if(module.parts.get(i).ports.get(j).name.endsWith("]")){
@@ -740,18 +753,31 @@ public class Compiler2 {
                         }
                         myWires.add(j,temp);
                     }
+                    //TODO    If this attempt fails, go back to version control at earliest date on March 23rd
                     else{
                         int wordSize=module.parts.get(i).ports.get(j).name.length();
                         int size=0;
                         for(Wire wire : module.wires){
-                            if(wire.name.length()>=wordSize){
-                                    if(wire.name.length()>wordSize&&wire.name.substring(0,wordSize).equals(module.parts.get(i).ports.get(j).name)){
-                                        if(wire.name.charAt(wordSize)=='_')
-                                        size++;
-                                    }
-                                    else if(wire.name.length()==wordSize&&wire.name.equals(module.parts.get(i).ports.get(j).name))
-                                        size++;
+                            if(wire.name.length()==wordSize){
+                                if(wire.name.equals(module.parts.get(i).ports.get(j).name)){
+                                    size++;
+                                }
                             }
+                            else if(wire.name.length()>wordSize){
+                                if(wire.name.substring(0,wordSize).equals(module.parts.get(i).ports.get(j).name)){
+                                    if(wire.name.charAt(wordSize)=='_' &&
+                                            wire.name.endsWith(""+size))
+                                        size++;
+                                }
+                            }
+//                            if(wire.name.length()>=wordSize){
+//                                    if(wire.name.length()>wordSize&&wire.name.substring(0,wordSize).equals(module.parts.get(i).ports.get(j).name)){
+//                                        if(wire.name.charAt(wordSize)=='_')
+//                                        size++;
+//                                    }
+//                                    else if(wire.name.length()==wordSize&&wire.name.equals(module.parts.get(i).ports.get(j).name))
+//                                        size++;
+//                            }
                         }
                         if(size==1){
                             Wire[] temp = new Wire[1];
@@ -778,8 +804,12 @@ public class Compiler2 {
                         }
                     }
                 }
+                //add all of the parts from the temporary module to the main module
                 for(int j=0;j<tempMod.parts.size();j++){
                     String currName = tempMod.parts.get(j).name;
+                    if(currName.contains("DFF") && tempMod.parts.size() != 5){
+                        System.out.println();
+                    }
                     if(!tempMod.parts.get(j).name.substring(0,3).equals("MOD"))
                         tempMod.parts.get(j).name = newName(tempMod.parts.get(j).name);
                     for(Wire wire : tempMod.wires){
@@ -798,27 +828,36 @@ public class Compiler2 {
                             }
                         }
                     }
-                    for(int k=0;k<module.wires.get(2).ports.size();k++){
-                        if(module.wires.get(2).ports.get(k).part!=null){
-                            if(module.wires.get(2).ports.get(k).part.name.equals(currName)){
-                                Port newPort = new Port(module.wires.get(2).ports.get(k));
+                    for(int k=0;k<this.modules.get(0).wires.get(2).ports.size();k++){
+                        if(this.modules.get(0).wires.get(2).ports.get(k).part!=null){
+                            if(this.modules.get(0).wires.get(2).ports.get(k).part.name.equals(currName)){
+                                Port newPort = new Port(this.modules.get(0).wires.get(2).ports.get(k));
                                 Part temp = new Part(tempMod.parts.get(j));
                                 newPort.part = temp;
-                                module.wires.get(2).ports.add(newPort);
+                                this.modules.get(0).wires.get(2).ports.add(newPort);
                             }
                         }
                     }
                     Part temp = new Part(tempMod.parts.get(j));
                     module.parts.add(temp);
                 }
+                //find all of the input and output wires for the temporary module
                 ArrayList<Wire[]> modWires = new ArrayList<Wire[]>();
+                //TODO
                 for(int j=0;j<tempMod.ioNames.length;j++){
                     int wordSize=tempMod.ioNames[j].length();
                     int size=0;
                     for(Wire wire : tempMod.wires){
-                        if(wire.name.length()>=wordSize){
-                            if(wire.name.substring(0,wordSize).equals(tempMod.ioNames[j]))
+                        if(wire.name.length()==wordSize){
+                            if(wire.name.equals(tempMod.ioNames[j]))
                                 size++;
+                        }
+                        else if(wire.name.length() > wordSize){
+                            if(wire.name.substring(0,wordSize).equals(tempMod.ioNames[j])){
+                                if(wire.name.charAt(wordSize)=='_' &&
+                                            wire.name.endsWith(""+size))
+                                    size++;
+                            }
                         }
                     }
                     if(size==1){
@@ -842,6 +881,8 @@ public class Compiler2 {
                         modWires.add(j,temp);
                     }
                 }
+                //find the wires that are attached to the inputs and outputs and
+                //remove them from that module
                 for(int j=0;j<modWires.size();j++){
                     for(int k=0;k<modWires.get(j).length;k++){
                         for(int l=0;l<tempMod.wires.size();l++){
@@ -856,6 +897,7 @@ public class Compiler2 {
                         }
                     }
                 }
+                //add all of the wires to the main module
                 for(Wire wire : tempMod.wires){
                     Wire temp = new Wire(wire);
                     if(temp.name.equals("gnd")||temp.name.equals("ground")||temp.name.equals("GND")){
@@ -875,6 +917,7 @@ public class Compiler2 {
                         module.wires.add(temp);
                     }
                 }
+                //remove the module placeholder from the main module
                 module.parts.remove(i);
                 i--;
             }
@@ -891,6 +934,7 @@ public class Compiler2 {
         int[] size = new int[2];
         int finalSize;
         String temp = null;
+        //find out how many wires we are going to need for this vector
         while(io.charAt(a) != '[')
             a++;
         a++;
@@ -907,7 +951,9 @@ public class Compiler2 {
         while(io.charAt(a) == ' ')
             a++;
         
+        //add of the wires depending on if it is a vector of wires, inputs, or outputs
         switch(ioType){
+            //add inputs
             case 1:
                 String[] tempI = io.substring(a).split("\\,");
                 for(int k = 0; k < tempI.length; k++)
@@ -916,6 +962,7 @@ public class Compiler2 {
                     tempI[tempI.length-1]=tempI[tempI.length-1].substring(0,tempI[tempI.length-1].length()-1);
                 currModule.addInputs(tempI, finalSize);
                 break;
+            //add outputs
             case 2:
                 String[] tempO = io.substring(a).split("\\,");
                 for(int k = 0; k < tempO.length; k++)
@@ -924,6 +971,7 @@ public class Compiler2 {
                     tempO[tempO.length-1]=tempO[tempO.length-1].substring(0,tempO[tempO.length-1].length()-1);
                 currModule.addOutputs(tempO, finalSize);
                 break;
+            //add wires
             case 3:
                 String[] tempW = io.substring(a).split("\\,");
                 for(int k = 0; k < tempW.length; k++)
@@ -1030,9 +1078,13 @@ public class Compiler2 {
         if(temp!=null){
             myStatements.add(temp);
         }
+        //perform evaluations if this line is not setting vcc or gnd to supply1 or supply0
         if(!(myStatements.get(2).equals("supply1")||myStatements.get(2).equals("supply0"))){
+            //find all of the wires associated with this statement
             ArrayList<Wire[]> wireSpots = new ArrayList<Wire[]>();
             for(int i=0;i<myStatements.size();i++){
+                //if a vector is part of this
+                //TODO
                 if(myStatements.get(i).charAt(myStatements.get(i).length()-1)==']'){
                     wireSpots.add(new Wire[1]);
                     int d = 0;
@@ -1050,6 +1102,7 @@ public class Compiler2 {
                         }
                     }
                 }
+                //if a vector is not part of this
                 else{
                     boolean wireYes = true;
                     for(String op : operators){
@@ -1067,7 +1120,8 @@ public class Compiler2 {
                             }
                             else if(wire.name.length()>myStatements.get(i).length()){
                                 if(myStatements.get(i).equals(wire.name.substring(0,myStatements.get(i).length()))){
-                                    if(wire.name.charAt(myStatements.get(i).length())=='_')
+                                    if(wire.name.charAt(myStatements.get(i).length())=='_' && 
+                                            wire.name.endsWith(""+size))
                                         size++;
                                     else if(size==0)
                                         size++;
@@ -1763,14 +1817,6 @@ public class Compiler2 {
     involved with parentheses in an assign statement
     */
     public String parens(ArrayList<String> myStatement, ArrayList<Wire[]> wireSpots){
-        /*
-        TODO
-        (+,-) -> find bitSize, new Wire[bitSize]
-        (*) -> find bitSize, new Wire[bitSize*2]
-        (|,&,^,||,&&,~|,~&,~^,^~) -> find bitSize, new Wire[1]
-        ({}) -> find both bitSizes, new Wire[bitSize1 + bitSize2]
-        (>>,<<) -> find bitSize, new Wire[bitSize]
-        */
         boolean invert=false;
         if(myStatement.get(0).equals("!")||myStatement.get(0).equals("~")){
             invert=true;
