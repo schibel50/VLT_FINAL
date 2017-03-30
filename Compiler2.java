@@ -538,12 +538,12 @@ public class Compiler2 {
                 if(wire.name.equals(myPorts[i])){
                     myWires[i]=wire;
                 }
-                else if(myPorts[i].equals("ground")||myPorts[i].equals("gnd")){
-                    myWires[i]=GND;
-                }
-                else if(myPorts[i].equals("vcc")){
-                    myWires[i]=VCC;
-                }
+            }
+            if(myWires[i] == null && (myPorts[i].equals("ground")||myPorts[i].equals("gnd"))){
+                myWires[i]=GND;
+            }
+            else if(myWires[i] == null && myPorts[i].equals("vcc")){
+                myWires[i]=VCC;
             }
         }
         //if one of the preset modules was not assigned to a wire, set it to float
